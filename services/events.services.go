@@ -62,7 +62,7 @@ func getExams(start, end time.Time) (events []Event, err error) {
 	for _, exam := range exams {
 		events = append(events, Event{
 			Title:       generateExamTitle(exam),
-			Description: exam.Text,
+			Description: generateExamDescription(exam),
 			Category:    "Prüfung",
 			Date:        exam.Start.Format("2006-01-02"),
 			FullDay:     false,
@@ -221,4 +221,23 @@ func generateExamTitle(exam webuntis.Exam) string {
 	title := strings.Join([]string{examType, examClass, examSubject, examCourseType, examTeacher}, " ")
 	title = strings.ReplaceAll(strings.TrimSpace(title), "  ", " ")
 	return title
+}
+
+func generateExamDescription(exam webuntis.Exam) string {
+	description := exam.Text
+	// use original exam name as description, if real description is empty
+	if description == "" {
+		description = exam.Name
+	}
+
+	// do not display description if every word is already present in generated exam title
+	title := generateExamTitle(exam)
+	usefulDescription := description
+	for _, word := range strings.Split(title, " ") {
+		usefulDescription = strings.ReplaceAll(usefulDescription, word, "")
+	}
+	if strings.TrimSpace(usefulDescription) == "" {
+		return ""
+	}
+	return description
 }
