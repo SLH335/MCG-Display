@@ -1,6 +1,10 @@
 # Output dir
 tmp/
 
+# Tailwind CSS
+node_modules/
+static/css/tailwind.css
+
 # Generated Templ files
 *_templ.go
 
