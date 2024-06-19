@@ -2,10 +2,12 @@ package webuntis
 
 import (
 	"bytes"
+	"encoding/base64"
 	"encoding/json"
 	"io"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"time"
 
@@ -78,6 +80,34 @@ func (session *Session) getSessionToken() (token string, err error) {
 	return token, err
 }
 
+func (session *Session) GetSessionToken() (token string, err error) {
+	token, err = session.Request(http.MethodGet, "WebUntis/api/token/new", nil, nil, false)
+
+	session.SessionToken = token
+	return token, err
+}
+
+// check if session token is valid
+func (session *Session) isSessionTokenValid() bool {
+	if session.SessionToken == "" {
+		return false
+	}
+
+	tokenParts := strings.Split(session.SessionToken, ".")
+	if len(tokenParts) != 3 {
+		return false
+	}
+
+	data, err := base64.RawStdEncoding.DecodeString(tokenParts[1])
+	if err != nil || len(data) == 0 {
+		return false
+	}
+
+	expires := time.Unix(int64(fastjson.GetInt(data, "exp")), 0)
+
+	return expires.After(time.Now())
+}
+
 // generic request to the WebUntis API
 func (session *Session) Request(method, url string, queryParams url.Values, jsonBody []byte, auth bool) (result string, err error) {
 	req, err := http.NewRequest(method, baseUrl+url+"?"+queryParams.Encode(), bytes.NewBuffer(jsonBody))
@@ -87,7 +117,7 @@ func (session *Session) Request(method, url string, queryParams url.Values, json
 
 	req.Header.Add("Cookie", session.buildCookies())
 	if auth {
-		if session.SessionToken == "" {
+		if !session.isSessionTokenValid() {
 			session.getSessionToken()
 		}
 		req.Header.Add("Authorization", "Bearer "+session.SessionToken)
@@ -153,4 +183,34 @@ func (session *Session) Logout() error {
 
 	session = &Session{}
 	return nil
+}
+
+func convertDateToUntis(date time.Time) string {
+	return date.Format("2006-01-02")
+}
+
+func (session *Session) GetExams(start, end time.Time, withDeleted bool) (exams []Exam, err error) {
+	path := "WebUntis/api/rest/view/v1/exams"
+	queryParams := url.Values{
+		"start":       {convertDateToUntis(start)},
+		"end":         {convertDateToUntis(end)},
+		"withDeleted": {strconv.FormatBool(withDeleted)},
+	}
+
+	res, err := session.Request(http.MethodGet, path, queryParams, nil, true)
+	if err != nil {
+		return exams, err
+	}
+
+	var jsonData struct {
+		Exams       []Exam `json:"exams"`
+		WithDeleted bool   `json:"withDeleted"`
+	}
+	err = json.Unmarshal([]byte(res), &jsonData)
+	if err != nil {
+		return exams, err
+	}
+	exams = jsonData.Exams
+
+	return exams, err
 }
