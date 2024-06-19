@@ -20,6 +20,10 @@ const schoolName string = "Marie-Curie-Gym"
 const schoolNameBase64 string = "_bWFyaWUtY3VyaWUtZ3lt"
 const appId string = "MCG-Display"
 
+// timetable resources to access calendar; must be accessible by the user issuing the request
+const calendarResourceType string = "STUDENT"
+const calendarResource int = 5186
+
 type Session struct {
 	ClassId      int
 	PersonId     int
@@ -169,7 +173,7 @@ func Login(username, password string) (session Session, err error) {
 		SessionId:  string(jsonData.GetStringBytes("result", "sessionId")),
 	}
 
-	return session, err
+	return session, nil
 }
 
 func (session *Session) Logout() error {
@@ -212,5 +216,85 @@ func (session *Session) GetExams(start, end time.Time, withDeleted bool) (exams 
 	}
 	exams = jsonData.Exams
 
-	return exams, err
+	return exams, nil
+}
+
+func (session *Session) GetCalendarEvents(start, end time.Time) (events []CalendarEvent, err error) {
+	// ensure that external calendars are displayed in timetable
+	path := "WebUntis/api/rest/view/v1/timetable/calendar"
+	jsonBody := []byte(`{"integrations":[{"name":"Schuljahreskalender","active":true}]}`)
+	_, err = session.Request(http.MethodPut, path, nil, jsonBody, true)
+	if err != nil {
+		return events, err
+	}
+
+	// get calendar data by querying timetable
+	path = "WebUntis/api/rest/view/v1/timetable/entries"
+	queryParams := url.Values{
+		"start":        {convertDateToUntis(start)},
+		"end":          {convertDateToUntis(end)},
+		"format":       {"4"},
+		"resourceType": {calendarResourceType},
+		"resources":    {strconv.Itoa(calendarResource)},
+		"periodTypes":  {"OFFICE_HOUR"}, // often unused period type to query less unneeded information
+	}
+
+	res, err := session.Request(http.MethodGet, path, queryParams, nil, true)
+	if err != nil {
+		return events, err
+	}
+
+	var parser fastjson.Parser
+	jsonData, err := parser.Parse(res)
+	if err != nil {
+		return events, err
+	}
+
+	// sadly events in "dayEntries" and "gridEntries" have different JSON formats
+	for _, dayData := range jsonData.GetArray("days") {
+		for _, entry := range dayData.GetArray("dayEntries") {
+			if string(entry.GetStringBytes("name")) != "Schuljahreskalender" {
+				continue
+			}
+
+			entryStart, _ := time.Parse("2006-01-02T15:04", string(entry.GetStringBytes("duration", "start")))
+			entryEnd, _ := time.Parse("2006-01-02T15:04:05", string(entry.GetStringBytes("duration", "end")))
+
+			events = append(events, CalendarEvent{
+				Id:       entry.GetInt64("id"),
+				Name:     string(entry.GetStringBytes("position1", "shortName")),
+				Notes:    string(entry.GetStringBytes("notesAll")),
+				Date:     string(dayData.GetStringBytes("date")),
+				Start:    entryStart,
+				End:      entryEnd,
+				FullDay:  true,
+				Location: string(entry.GetStringBytes("position2", "shortName")),
+				Calendar: string(entry.GetStringBytes("position3", "shortName")),
+				Color:    string(entry.GetStringBytes("color")),
+			})
+		}
+		for _, entry := range dayData.GetArray("gridEntries") {
+			if string(entry.GetStringBytes("name")) != "Schuljahreskalender" {
+				continue
+			}
+
+			entryStart, _ := time.Parse("2006-01-02T15:04", string(entry.GetStringBytes("duration", "start")))
+			entryEnd, _ := time.Parse("2006-01-02T15:04", string(entry.GetStringBytes("duration", "end")))
+
+			events = append(events, CalendarEvent{
+				Id:       entry.GetInt64("ids", "0"),
+				Name:     string(entry.GetStringBytes("position1", "0", "current", "shortName")),
+				Notes:    string(entry.GetStringBytes("notesAll")),
+				Date:     string(dayData.GetStringBytes("date")),
+				Start:    entryStart,
+				End:      entryEnd,
+				FullDay:  false,
+				Location: string(entry.GetStringBytes("position2", "0", "current", "shortName")),
+				Calendar: string(entry.GetStringBytes("position3", "0", "current", "shortName")),
+				Color:    string(entry.GetStringBytes("color")),
+			})
+		}
+	}
+
+	return events, nil
 }

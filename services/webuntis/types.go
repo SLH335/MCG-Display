@@ -36,6 +36,19 @@ type Exam struct {
 	Rooms        []UntisValue      `json:"rooms"`
 }
 
+type CalendarEvent struct {
+	Id       int64
+	Name     string
+	Notes    string
+	Date     string
+	Start    time.Time
+	End      time.Time
+	FullDay  bool
+	Location string
+	Calendar string
+	Color    string
+}
+
 type UntisValue struct {
 	Id          int    `json:"id"`
 	ShortName   string `json:"shortName"`
