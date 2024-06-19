@@ -1,0 +1,17 @@
+package components
+
+templ Layout(children ...templ.Component) {
+	<!DOCTYPE html>
+	<html lang="en">
+		<head>
+			<meta charset="UTF-8"/>
+			<meta name="viewport" content="width=device-width, initial-scale=1"/>
+			<title>MCG Wochenplan</title>
+		</head>
+		<body>
+			for _, child := range children {
+				@child
+			}
+		</body>
+	</html>
+}
