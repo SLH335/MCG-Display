@@ -18,7 +18,8 @@ func main() {
 	e.Use(middleware.Recover())
 
 	// Routes
-	handlers.SetupRoutes(e)
+	e.GET("/", handlers.Index)
+	e.GET("/events", handlers.Events)
 
 	// Start server
 	e.Logger.Fatal(e.Start(":3000"))
