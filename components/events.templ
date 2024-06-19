@@ -33,20 +33,26 @@ templ eventsMain(events map[string][]Event) {
 }
 
 templ eventBox(event Event) {
-	<div class="rounded-lg bg-gray-200 px-4 py-3">
-		if !event.FullDay {
-			<p>{ event.Start.Format("15:04") + " - " + event.End.Format("15:04") }</p>
-		}
-		<p class="text-lg font-bold">{ event.Title }</p>
-		<p>
-			for i, line := range strings.Split(event.Description, "\n") {
-				if i > 0 {
-					<br/>
+	<div class="rounded-xl bg-gray-200 px-4 py-3">
+		<div class="flex justify-between">
+			<p>
+				if !event.FullDay {
+					{ event.Start.Format("15:04") + " - " + event.End.Format("15:04") }
 				}
-				{ line }
-			}
-		</p>
-		<p>{ event.Location }</p>
+			</p>
+			<p>{ event.Location }</p>
+		</div>
+		<p class="text-lg font-bold">{ event.Title }</p>
+		if len(event.Description) < 75 {
+			<p>
+				for i, line := range strings.Split(event.Description, "\n") {
+					if i > 0 {
+						<br/>
+					}
+					{ line }
+				}
+			</p>
+		}
 	</div>
 }
 
