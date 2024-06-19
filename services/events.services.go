@@ -1,7 +1,9 @@
 package services
 
 import (
+	"regexp"
 	"slices"
+	"strings"
 	"time"
 
 	"github.com/mcg-dallgow/mcg-display/services/webuntis"
@@ -59,7 +61,7 @@ func getExams(start, end time.Time) (events []Event, err error) {
 
 	for _, exam := range exams {
 		events = append(events, Event{
-			Title:       exam.Name,
+			Title:       generateExamTitle(exam),
 			Description: exam.Text,
 			Category:    "Prüfung",
 			Date:        exam.Start.Format("2006-01-02"),
@@ -127,4 +129,96 @@ func sortEvents(events []Event) {
 		return 1
 	})
 
+}
+
+func generateExamTitle(exam webuntis.Exam) string {
+	// exam type
+	examType := ""
+	switch exam.Type.ShortName {
+	case "LEK-Test":
+		if AnyContain([]string{exam.Name, exam.Text}, "Test", true) {
+			examType = "Test"
+		} else {
+			examType = "LEK"
+		}
+	case "KA":
+		examType = "Klassenarbeit"
+	default:
+		examType = exam.Type.DisplayName
+	}
+
+	// exam class or grade level
+	examClass := ""
+	examClasses := []string{}
+	for _, class := range exam.Classes {
+		examClasses = append(examClasses, strings.Replace(class.ShortName, "Jhg", "Jg", 1))
+	}
+	slices.Sort(examClasses)
+	examClasses = slices.Compact(examClasses)
+	if len(examClasses) > 2 {
+		gradeLevels := []string{}
+		re := regexp.MustCompile("[0-9]+")
+		for _, class := range examClasses {
+			gradeLevels = append(gradeLevels, re.FindString(class))
+		}
+		if len(slices.Compact(gradeLevels)) == 1 {
+			examClass = "Jg" + gradeLevels[0]
+		}
+	}
+	if examClass == "" {
+		examClass = strings.Join(examClasses, ", ")
+	}
+
+	// exam subject
+	examSubject := ""
+	for i := 0; i < int(WAT); i++ {
+		subject := Subject(i)
+		if exam.Subject.ShortName != "" {
+			if subject.Short() == exam.Subject.ShortName[:2] {
+				examSubject = subject.String()
+				break
+			}
+		} else {
+			if AnyContain([]string{exam.Name, exam.Text}, subject.String(), true) ||
+				AnyContain([]string{exam.Name, exam.Text}, subject.Short(), false) {
+
+				examSubject = subject.String()
+				break
+			}
+		}
+	}
+
+	// exam course type
+	examCourseType := ""
+	if examClass == "Jg11" || examClass == "Jg12" {
+		for _, courseType := range []string{"GK", "LK"} {
+			subject := ""
+			if len(exam.Subject.ShortName) >= 2 {
+				subject = exam.Subject.ShortName[:2]
+			}
+			if AnyContain([]string{exam.Name, exam.Text, subject}, courseType, false) {
+				examCourseType = courseType
+				break
+			}
+		}
+	}
+
+	// exam teacher
+	examTeachers := []string{}
+	for _, teacher := range exam.Teachers {
+		teacherName := teacher.LongName
+
+		switch teacher.ShortName {
+		case "UrSoF":
+			teacherName = "Urschel"
+		}
+
+		examTeachers = append(examTeachers, teacherName)
+	}
+	examTeacher := strings.Join(examTeachers, ", ")
+
+	// combine elements into title
+	title := strings.Join([]string{examType, examClass, examSubject, examCourseType, examTeacher}, " ")
+	title = strings.ReplaceAll(strings.TrimSpace(title), "  ", " ")
+	return title
 }

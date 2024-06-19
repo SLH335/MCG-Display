@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/a-h/templ"
@@ -74,10 +75,47 @@ func ParseDateRange(start, end, days string) (startTime, endTime time.Time, err 
 		return time.Time{}, time.Time{}, errors.New("error: end date and day amount cannot both be given")
 	}
 
-	// error if end date is not after start date
-	if !endTime.After(startTime) {
-		return time.Time{}, time.Time{}, errors.New("error: end date must be after start date")
+	// error if end date is before start date
+	if endTime.Before(startTime) {
+		return time.Time{}, time.Time{}, errors.New("error: end date cannot be before start date")
 	}
 
 	return startTime, endTime, nil
+}
+
+func Contains(str, sub string, ignoreCase bool) bool {
+	if ignoreCase {
+		return strings.Contains(strings.ToLower(str), strings.ToLower(sub))
+	} else {
+		return strings.Contains(str, sub)
+	}
+}
+
+func ContainsAny(str string, subs []string, ignoreCase bool) bool {
+	for _, sub := range subs {
+		if Contains(str, sub, ignoreCase) {
+			return true
+		}
+	}
+	return false
+}
+
+func AnyContain(strs []string, sub string, ignoreCase bool) bool {
+	for _, str := range strs {
+		if Contains(str, sub, ignoreCase) {
+			return true
+		}
+	}
+	return false
+}
+
+func AnyContainAny(strs []string, subs []string, ignoreCase bool) bool {
+	for _, str := range strs {
+		for _, sub := range subs {
+			if Contains(str, sub, ignoreCase) {
+				return true
+			}
+		}
+	}
+	return false
 }
