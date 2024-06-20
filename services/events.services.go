@@ -1,6 +1,8 @@
 package services
 
 import (
+	"encoding/json"
+	"errors"
 	"regexp"
 	"slices"
 	"strings"
@@ -45,6 +47,12 @@ func GetEvents(start, end time.Time) (events map[string][]Event, err error) {
 }
 
 func getExams(start, end time.Time) (events []Event, err error) {
+	cache := Cache{"exams", start, end}
+	events, err = getCachedEvents(cache)
+	if err == nil && len(events) > 0 {
+		return events, nil
+	}
+
 	username, password, err := GetCredentials(1)
 	if err != nil {
 		return events, err
@@ -72,10 +80,19 @@ func getExams(start, end time.Time) (events []Event, err error) {
 		})
 	}
 
+	eventsJson, err := json.Marshal(events)
+	cache.Write(eventsJson)
+
 	return events, nil
 }
 
 func getCalendarEvents(start, end time.Time) (events []Event, err error) {
+	cache := Cache{"calendar", start, end}
+	events, err = getCachedEvents(cache)
+	if err == nil && len(events) > 0 {
+		return events, nil
+	}
+
 	username, password, err := GetCredentials(2)
 	if err != nil {
 		return events, err
@@ -103,7 +120,23 @@ func getCalendarEvents(start, end time.Time) (events []Event, err error) {
 		})
 	}
 
+	eventsJson, err := json.Marshal(events)
+	cache.Write(eventsJson)
+
 	return events, nil
+}
+
+func getCachedEvents(cache Cache) (events []Event, err error) {
+	if !cache.IsValid() {
+		return events, errors.New("error: event cache is not valid")
+	}
+	eventsJson, err := cache.Load()
+	if err != nil {
+		return events, err
+	}
+	err = json.Unmarshal(eventsJson, &events)
+
+	return events, err
 }
 
 func sortEvents(events []Event) {
