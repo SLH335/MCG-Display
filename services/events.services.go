@@ -71,7 +71,7 @@ func getExams(start, end time.Time) (events []Event, err error) {
 		events = append(events, Event{
 			Title:       generateExamTitle(exam),
 			Description: generateExamDescription(exam),
-			Category:    "Prüfung",
+			Category:    ExamEvent,
 			Date:        exam.Start.Format("2006-01-02"),
 			FullDay:     false,
 			Start:       exam.Start.Time,
@@ -111,7 +111,7 @@ func getCalendarEvents(start, end time.Time) (events []Event, err error) {
 		events = append(events, Event{
 			Title:       calendarEvent.Name,
 			Description: calendarEvent.Notes,
-			Category:    calendarEvent.Calendar,
+			Category:    getCalendarEventCategory(calendarEvent),
 			Date:        calendarEvent.Date,
 			FullDay:     calendarEvent.FullDay,
 			Start:       calendarEvent.Start,
@@ -174,10 +174,8 @@ func generateExamTitle(exam webuntis.Exam) string {
 		} else {
 			examType = "LEK"
 		}
-	case "KA":
-		examType = "Klassenarbeit"
 	default:
-		examType = exam.Type.DisplayName
+		examType = exam.Type.ShortName
 	}
 
 	// exam class or grade level
@@ -273,4 +271,25 @@ func generateExamDescription(exam webuntis.Exam) string {
 		return ""
 	}
 	return description
+}
+
+func getCalendarEventCategory(event webuntis.CalendarEvent) EventCategory {
+	switch event.Calendar {
+	case "Termine Jahrgang 7-9":
+		return SekIEvent
+	case "Termine Jahrgang 10 und Oberstufe":
+		return SekIIEvent
+	case "Lernende":
+		return StudentEvent
+	case "Lehrkräfte":
+		return TeacherEvent
+	case "Öffentlich":
+		if Contains(event.Name, "AG", false) {
+			return AGEvent
+		} else {
+			return PublicEvent
+		}
+	default:
+		return PublicEvent
+	}
 }
