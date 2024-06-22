@@ -76,7 +76,7 @@ func getExams(start, end time.Time) (events []Event, err error) {
 			FullDay:     false,
 			Start:       exam.Start.Time,
 			End:         exam.End.Time,
-			Location:    exam.Rooms[0].ShortName,
+			Location:    formatLocation(exam.Rooms[0].ShortName),
 		})
 	}
 
@@ -116,7 +116,7 @@ func getCalendarEvents(start, end time.Time) (events []Event, err error) {
 			FullDay:     calendarEvent.FullDay,
 			Start:       calendarEvent.Start,
 			End:         calendarEvent.End,
-			Location:    calendarEvent.Location,
+			Location:    formatLocation(calendarEvent.Location),
 		})
 	}
 
@@ -292,4 +292,18 @@ func getCalendarEventCategory(event webuntis.CalendarEvent) EventCategory {
 	default:
 		return PublicEvent
 	}
+}
+
+func formatLocation(room string) string {
+	switch room {
+	case "Turnhalle":
+		return "TH"
+	case "SHA":
+		return "TH (A)"
+	case "SHB":
+		return "TH (B)"
+	case "SHC":
+		return "TH (C)"
+	}
+	return room
 }
