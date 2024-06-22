@@ -35,21 +35,25 @@ templ eventsMain(events map[string][]Event) {
 	<script type="text/javascript">
 		const eventHeader = document.getElementsByClassName("event-header")[0];
 		const columns = document.getElementsByClassName("event-list");
-		let direction = -1
+		let direction = -1;
 
-		let maxSpeed = 0;
+		const wait = 5000;
+		let maxDuration = 0;
 		for (const column of columns) {
 			const overflow = column.scrollHeight - screen.height + eventHeader.scrollHeight + 10;
 
 			if (overflow > 0) {
-				const speed = Math.min(Math.round(overflow / 100), 3);
-				column.classList.add('duration-['+(speed*5000)+"ms]");
-				maxSpeed = Math.max(maxSpeed, speed);
+				const duration = Math.min(Math.round(overflow / 100), 3) * 5000;
+				column.classList.add('duration-['+duration+"ms]");
+				maxDuration = Math.max(maxDuration, duration);
 			}
 		}
 
-		animation();
-		setInterval(animation, maxSpeed*5000 + 5000);
+		setTimeout(() => {
+			animation();
+			setInterval(animation, maxDuration + wait);
+		}, 5000);
+		setInterval(() => window.location.reload(true), 4 * (maxDuration+wait));
 
 		function animation() {
 			for (const column of columns) {
