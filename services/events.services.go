@@ -53,11 +53,11 @@ func getExams(start, end time.Time) (events []Event, err error) {
 		return events, nil
 	}
 
-	username, password, err := GetCredentials(1)
+	username, secret, err := GetCredentials(1)
 	if err != nil {
 		return events, err
 	}
-	session, err := webuntis.Login(username, password)
+	session, err := webuntis.LoginSecret(username, secret, false)
 	if err != nil {
 		return events, err
 	}
@@ -93,11 +93,11 @@ func getCalendarEvents(start, end time.Time) (events []Event, err error) {
 		return events, nil
 	}
 
-	username, password, err := GetCredentials(2)
+	username, secret, err := GetCredentials(2)
 	if err != nil {
 		return events, err
 	}
-	session, err := webuntis.Login(username, password)
+	session, err := webuntis.LoginSecret(username, secret, false)
 	if err != nil {
 		return events, err
 	}

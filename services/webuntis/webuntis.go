@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/url"
@@ -11,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/pquerna/otp/totp"
 	"github.com/valyala/fastjson"
 )
 
@@ -32,39 +34,68 @@ type Session struct {
 	SessionToken string
 }
 
+type authRequestType int
+
+const (
+	passwordAuthRequest authRequestType = iota
+	secretAuthRequest
+	logoutRequest
+)
+
 // structs used for json encoding of auth request bodies
 type authRequestBody struct {
-	Id      string                `json:"id"`
-	Method  string                `json:"method"`
-	Params  authRequestBodyParams `json:"params"`
-	JsonRpc string                `json:"jsonrpc"`
+	Id      string `json:"id"`
+	Method  string `json:"method"`
+	Params  any    `json:"params"`
+	JsonRpc string `json:"jsonrpc"`
 }
 
-type authRequestBodyParams struct {
-	User     string `json:"user,omitempty"`
-	Password string `json:"password,omitempty"`
-	Client   string `json:"client,omitempty"`
-}
+func buildAuthRequestBody(requestType authRequestType, username, password string) io.Reader {
+	var body authRequestBody
 
-func buildAuthRequestBody(method, username, password string) io.Reader {
-	client := ""
-	if username != "" || password != "" {
-		client = appId
-	}
-
-	body := authRequestBody{
-		Id:     appId,
-		Method: method,
-		Params: authRequestBodyParams{
-			User:     username,
-			Password: password,
-			Client:   client,
-		},
-		JsonRpc: "2.0",
+	switch requestType {
+	case passwordAuthRequest:
+		body = authRequestBody{
+			Id:     appId,
+			Method: "authenticate",
+			Params: struct {
+				User     string `json:"user"`
+				Password string `json:"password"`
+				Client   string `json:"client"`
+			}{
+				User:     username,
+				Password: password,
+				Client:   appId,
+			},
+		}
+	case secretAuthRequest:
+		body = authRequestBody{
+			Id:     appId,
+			Method: "getUserData2017",
+			Params: []struct {
+				Auth any `json:"auth"`
+			}{{
+				Auth: struct {
+					ClientTime int64  `json:"clientTime"`
+					User       string `json:"user"`
+					Otp        string `json:"otp"`
+				}{
+					ClientTime: time.Now().UnixMilli(),
+					User:       username,
+					Otp:        password,
+				},
+			}},
+		}
+	case logoutRequest:
+		body = authRequestBody{
+			Id:      appId,
+			Method:  "logout",
+			Params:  []string{},
+			JsonRpc: "2.0",
+		}
 	}
 
 	jsonBody, _ := json.Marshal(body)
-
 	return bytes.NewReader(jsonBody)
 }
 
@@ -145,9 +176,9 @@ func (session *Session) Request(method, url string, queryParams url.Values, json
 }
 
 // create a new WebUntis session
-func Login(username, password string) (session Session, err error) {
+func LoginPassword(username, password string) (session Session, err error) {
 	url := baseUrl + "WebUntis/jsonrpc.do?school=" + schoolName
-	reqBody := buildAuthRequestBody("authenticate", username, password)
+	reqBody := buildAuthRequestBody(passwordAuthRequest, username, password)
 
 	res, err := http.Post(url, "application/json", reqBody)
 	if err != nil {
@@ -176,11 +207,52 @@ func Login(username, password string) (session Session, err error) {
 	return session, nil
 }
 
-func (session *Session) Logout() error {
-	url := baseUrl + "WebUntis/jsonrpc.do?school=" + schoolName
-	reqBody := buildAuthRequestBody("logout", "", "")
+func LoginSecret(username, secret string, getSessionInfo bool) (session Session, err error) {
+	token, _ := totp.GenerateCode(secret, time.Now())
+	url := baseUrl + "WebUntis/jsonrpc_intern.do?m=getUserData2017&school=" + schoolName + "&v=i2.2"
+	reqBody := buildAuthRequestBody(secretAuthRequest, username, token)
 
-	_, err := http.Post(url, "application/json", reqBody)
+	res, err := http.Post(url, "application/json", reqBody)
+	if err != nil {
+		return session, err
+	}
+
+	sessionId, err := getCookieFromSetCookie(res.Header["Set-Cookie"], "JSESSIONID")
+	if err != nil {
+		return session, err
+	}
+
+	if getSessionInfo {
+		// TODO: get all user data
+	}
+
+	session = Session{
+		SessionId: sessionId,
+	}
+
+	return session, nil
+}
+
+func getCookieFromSetCookie(header []string, cookieName string) (cookieVal string, err error) {
+	if len(header) == 0 {
+		return "", errors.New("error: cookie is empty")
+	}
+	for _, setCookie := range header {
+		for _, cookiePart := range strings.Split(setCookie, "; ") {
+			cookieSplit := strings.Split(cookiePart, "=")
+			if cookieSplit[0] == cookieName {
+				return cookieSplit[1], nil
+			}
+		}
+	}
+	return "", errors.New("error: cookie not found")
+}
+
+func (session *Session) Logout() (err error) {
+	url := baseUrl + "WebUntis/jsonrpc.do?school=" + schoolName
+	reqBody := buildAuthRequestBody(logoutRequest, "", "")
+
+	_, err = http.Post(url, "application/json", reqBody)
 	if err != nil {
 		return err
 	}

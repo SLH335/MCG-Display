@@ -21,7 +21,7 @@ func RenderComponent(component templ.Component) string {
 	return buf.String()
 }
 
-func GetCredentials(n int) (username, password string, err error) {
+func GetCredentials(n int) (username, secret string, err error) {
 	err = godotenv.Load()
 	if err != nil {
 		return "", "", err
@@ -30,13 +30,13 @@ func GetCredentials(n int) (username, password string, err error) {
 	suffix := fmt.Sprintf("_%d", n)
 
 	username = os.Getenv("WEBUNTIS_USERNAME" + suffix)
-	password = os.Getenv("WEBUNTIS_PASSWORD" + suffix)
+	secret = os.Getenv("WEBUNTIS_SECRET" + suffix)
 
-	if username == "" && password == "" {
+	if username == "" && secret == "" {
 		return "", "", errors.New("error: no credentials found in .env")
 	}
 
-	return username, password, nil
+	return username, secret, nil
 }
 
 func ParseDateRange(start, end, days string) (startTime, endTime time.Time, err error) {
