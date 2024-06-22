@@ -9,7 +9,7 @@ templ Layout(children ...templ.Component) {
 			<title>MCG Wochenplan</title>
 			<link href="/static/css/tailwind.css" rel="stylesheet"/>
 		</head>
-		<body class="bg-slate-50">
+		<body class="overflow-hidden bg-slate-50">
 			for _, child := range children {
 				@child
 			}
