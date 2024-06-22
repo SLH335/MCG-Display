@@ -26,6 +26,7 @@ const (
 	Sport
 	Technik
 	WAT
+	EmptySubject
 )
 
 func (subject Subject) String() string {
@@ -53,6 +54,7 @@ func (subject Subject) String() string {
 		"Sport",
 		"Technik",
 		"WAT",
+		"",
 	}[subject]
 }
 
@@ -81,5 +83,49 @@ func (subject Subject) Short() string {
 		"SP",
 		"TE",
 		"AL",
+		"",
 	}[subject]
+}
+
+func (subject Subject) ShortAlt() string {
+	return []string{
+		"Bio",
+		"Che",
+		"Deu",
+		"Eng",
+		"Fra",
+		"Geo",
+		"Ges",
+		"Inf",
+		"Kun",
+		"Lat",
+		"LER",
+		"Mat",
+		"Mus",
+		"PB",
+		"Phy",
+		"Rec",
+		"evR",
+		"kaR",
+		"SK",
+		"Spa",
+		"Spo",
+		"Tec",
+		"WAT",
+		"",
+	}[subject]
+}
+
+func (subject Subject) Variants() (variants []string) {
+	if subject == PB {
+		variants = append(variants, "Politische Bildung")
+		variants = append(variants, "Polit. Bildung")
+	}
+	variants = append(variants, subject.String())
+	if subject == Mathematik {
+		variants = append(variants, "Mathe")
+	}
+	variants = append(variants, subject.ShortAlt())
+	variants = append(variants, subject.Short())
+	return variants
 }

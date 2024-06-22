@@ -201,23 +201,7 @@ func generateExamTitle(exam webuntis.Exam) string {
 	}
 
 	// exam subject
-	examSubject := ""
-	for i := 0; i < int(WAT); i++ {
-		subject := Subject(i)
-		if exam.Subject.ShortName != "" {
-			if subject.Short() == exam.Subject.ShortName[:2] {
-				examSubject = subject.String()
-				break
-			}
-		} else {
-			if AnyContain([]string{exam.Name, exam.Text}, subject.String(), true) ||
-				AnyContain([]string{exam.Name, exam.Text}, subject.Short(), false) {
-
-				examSubject = subject.String()
-				break
-			}
-		}
-	}
+	examSubject := getExamSubject(exam).String()
 
 	// exam course type
 	examCourseType := ""
@@ -255,22 +239,67 @@ func generateExamTitle(exam webuntis.Exam) string {
 }
 
 func generateExamDescription(exam webuntis.Exam) string {
-	description := exam.Text
-	// use original exam name as description, if real description is empty
-	if description == "" {
-		description = exam.Name
+	var usedWords []string
+	title := generateExamTitle(exam)
+
+	if Contains(title, "GK", false) {
+		usedWords = append(usedWords, []string{"Grund", "Grundkurs"}...)
+	} else if Contains(title, "LK", false) {
+		usedWords = append(usedWords, []string{"Leistungs", "Leistungskurs"}...)
+	}
+	if Contains(title, "KA", false) {
+		usedWords = append(usedWords, "Klassenarbeit")
+	}
+	usedWords = append(usedWords, getExamSubject(exam).Variants()...)
+	usedWords = append(usedWords, strings.Split(title, " ")...)
+
+	if isUseful(exam.Name, usedWords) && isUseful(exam.Text, usedWords) && len(exam.Name)+len(exam.Text) < 75 {
+		return exam.Name + " - " + exam.Text
 	}
 
-	// do not display description if every word is already present in generated exam title
-	title := generateExamTitle(exam)
-	usefulDescription := description
-	for _, word := range strings.Split(title, " ") {
-		usefulDescription = strings.ReplaceAll(usefulDescription, word, "")
+	if isUseful(exam.Text, usedWords) {
+		return exam.Text
 	}
-	if strings.TrimSpace(usefulDescription) == "" {
-		return ""
+
+	if isUseful(exam.Name, usedWords) {
+		return exam.Name
 	}
-	return description
+
+	return ""
+}
+
+func isUseful(text string, usedWords []string) bool {
+	if len(text) == 0 {
+		return false
+	}
+	usefulText := text
+	for _, word := range usedWords {
+		usefulText = strings.ReplaceAll(usefulText, word, "")
+	}
+	if float32(len(strings.Trim(usefulText, " .,-/&0123456789")))/float32(len(text)) < 0.4 {
+		return false
+	}
+	return true
+}
+
+func getExamSubject(exam webuntis.Exam) Subject {
+	for i := 0; i < int(EmptySubject)-1; i++ {
+		subject := Subject(i)
+		if exam.Subject.ShortName != "" {
+			shortName := exam.Subject.ShortName[:2]
+			if subject == Seminarkurs && len(exam.Subject.ShortName) >= 4 {
+				shortName = exam.Subject.ShortName[2:4]
+			}
+			if subject.Short() == shortName {
+				return subject
+			}
+		} else {
+			if AnyContainAny([]string{exam.Name, exam.Text}, subject.Variants(), false) {
+				return subject
+			}
+		}
+	}
+	return EmptySubject
 }
 
 func getCalendarEventCategory(event webuntis.CalendarEvent) EventCategory {
