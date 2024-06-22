@@ -37,21 +37,19 @@ templ eventsMain(events map[string][]Event) {
 		const columns = document.getElementsByClassName("event-list");
 		let direction = -1
 
-		let speed = 0;
+		let maxSpeed = 0;
 		for (const column of columns) {
 			const overflow = column.scrollHeight - screen.height + eventHeader.scrollHeight + 10;
 
 			if (overflow > 0) {
-				speed = Math.min(Math.max(Math.round(overflow / 100), speed), 3);
+				const speed = Math.min(Math.round(overflow / 100), 3);
+				column.classList.add('duration-['+(speed*5000)+"ms]");
+				maxSpeed = Math.max(maxSpeed, speed);
 			}
 		}
 
-		for (const column of columns) {
-			column.classList.add('duration-['+(speed*5000)+"ms]");
-		}
-
 		animation();
-		setInterval(animation, speed*5000 + 5000);
+		setInterval(animation, maxSpeed*5000 + 5000);
 
 		function animation() {
 			for (const column of columns) {
@@ -71,11 +69,11 @@ templ eventsMain(events map[string][]Event) {
 // Lernende/SekI+II:  bg-amber-400    bg-[#E8E2DB]
 // Lehrkräfte:        bg-sky-400      bg-[#D6E1ED]
 templ eventBox(event Event) {
-	<div class={ "hyphens-auto rounded-xl px-3 py-3 bg-" + event.Category.BackgroundColor() }>
+	<div class={ "hyphens-auto rounded-xl px-2.5 py-2.5 bg-" + event.Category.BackgroundColor() }>
 		<div class="flex">
 			<div class={ "min-w-3 mr-2 rounded-xl bg-" + event.Category.Color() }></div>
 			<div class="w-full pr-1">
-				<div class="flex justify-between text-lg">
+				<div class="flex justify-between pb-0.5 text-lg">
 					<p>
 						if !event.FullDay {
 							{ event.Start.Format("15:04") + " - " + event.End.Format("15:04") }
@@ -83,9 +81,9 @@ templ eventBox(event Event) {
 					</p>
 					<p>{ event.Location }</p>
 				</div>
-				<p class="py-0.5 text-xl font-bold">{ event.Title }</p>
+				<p class="text-xl font-bold">{ event.Title }</p>
 				if len(event.Description) < 75 {
-					<p class="text-lg">
+					<p class="pt-0.5 text-lg">
 						for i, line := range strings.Split(event.Description, "\n") {
 							if i > 0 {
 								<br/>
@@ -106,7 +104,7 @@ func getDates(events map[string][]Event) (dates []string) {
 			break
 		}
 		weekday := parseDate(date).Weekday()
-		if len(dayEvents) > 0 || weekday != 0 && weekday != 6 {
+		if len(dayEvents) > 0 || (weekday != 0 && weekday != 6) {
 			dates = append(dates, date)
 		}
 	}
