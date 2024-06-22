@@ -13,10 +13,14 @@ const (
 	Informatik
 	Kunst
 	Latein
+	LER
 	Mathematik
 	Musik
 	PB
 	Physik
+	Recht
+	ReligionEv
+	ReligionKa
 	Seminarkurs
 	Spanisch
 	Sport
@@ -36,10 +40,14 @@ func (subject Subject) String() string {
 		"Informatik",
 		"Kunst",
 		"Latein",
+		"LER",
 		"Mathematik",
 		"Musik",
 		"PB",
 		"Physik",
+		"Recht",
+		"ev. Religion",
+		"kat. Religion",
 		"Seminarkurs",
 		"Spanisch",
 		"Sport",
@@ -60,10 +68,14 @@ func (subject Subject) Short() string {
 		"IF",
 		"KU",
 		"LA",
+		"LE",
 		"MA",
 		"MU",
 		"PB",
 		"PH",
+		"RL",
+		"RE",
+		"RK",
 		"SK",
 		"SN",
 		"SP",
