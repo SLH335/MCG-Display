@@ -3,6 +3,7 @@ package services
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"regexp"
 	"slices"
 	"strings"
@@ -15,17 +16,32 @@ import (
 func GetEvents(start, end time.Time) (events map[string][]Event, err error) {
 	eventList := []Event{}
 
-	exams, err := getExams(start, end)
+	username, password, err := GetCredentials()
 	if err != nil {
 		return events, err
 	}
-	calendarEvents, err := getCalendarEvents(start, end)
+	session, err := webuntis.LoginPassword(username, password)
+	if err != nil {
+		return events, err
+	}
+	defer session.Logout()
+
+	exams, err := getExams(session, start, end)
+	if err != nil {
+		return events, err
+	}
+	calendarEvents, err := getCalendarEvents(session, start, end)
+	if err != nil {
+		return events, err
+	}
+	timetableEvents, err := getTimetableEvents(session, start, end)
 	if err != nil {
 		return events, err
 	}
 
 	eventList = append(eventList, exams...)
 	eventList = append(eventList, calendarEvents...)
+	eventList = append(eventList, timetableEvents...)
 
 	sortEvents(eventList)
 
@@ -46,22 +62,13 @@ func GetEvents(start, end time.Time) (events map[string][]Event, err error) {
 	return events, nil
 }
 
-func getExams(start, end time.Time) (events []Event, err error) {
+func getExams(session webuntis.Session, start, end time.Time) (events []Event, err error) {
 	cache := Cache{"exams", start, end}
 	events, err = getCachedEvents(cache)
 	if err == nil && len(events) > 0 {
 		return events, nil
 	}
 
-	username, secret, err := GetCredentials(1)
-	if err != nil {
-		return events, err
-	}
-	session, err := webuntis.LoginSecret(username, secret, false)
-	if err != nil {
-		return events, err
-	}
-	defer session.Logout()
 	exams, err := session.GetExams(start, end, false)
 	if err != nil {
 		return events, err
@@ -86,22 +93,13 @@ func getExams(start, end time.Time) (events []Event, err error) {
 	return events, nil
 }
 
-func getCalendarEvents(start, end time.Time) (events []Event, err error) {
+func getCalendarEvents(session webuntis.Session, start, end time.Time) (events []Event, err error) {
 	cache := Cache{"calendar", start, end}
 	events, err = getCachedEvents(cache)
 	if err == nil && len(events) > 0 {
 		return events, nil
 	}
 
-	username, secret, err := GetCredentials(2)
-	if err != nil {
-		return events, err
-	}
-	session, err := webuntis.LoginSecret(username, secret, false)
-	if err != nil {
-		return events, err
-	}
-	defer session.Logout()
 	calendarEvents, err := session.GetCalendarEvents(start, end)
 	if err != nil {
 		return events, err
@@ -124,6 +122,37 @@ func getCalendarEvents(start, end time.Time) (events []Event, err error) {
 	cache.Write(eventsJson)
 
 	return events, nil
+}
+
+func getTimetableEvents(session webuntis.Session, start, end time.Time) (events []Event, err error) {
+	cache := Cache{"timetable", start, end}
+	events, err = getCachedEvents(cache)
+	if err == nil && len(events) > 0 {
+		return events, nil
+	}
+
+	timetableEvents, err := session.GetTimetableEvents(start, end)
+	if err != nil {
+		return events, err
+	}
+
+	for _, timetableEvent := range timetableEvents {
+		title := fmt.Sprintf("%s %s", timetableEvent.Title, strings.Join(timetableEvent.Classes, ", "))
+
+		events = append(events, Event{
+			Title:    title,
+			Category: StudentEvent,
+			Date:     timetableEvent.Start.Format("2006-01-02"),
+			FullDay:  false,
+			Start:    timetableEvent.Start,
+			End:      timetableEvent.End,
+		})
+	}
+
+	eventsJson, err := json.Marshal(events)
+	cache.Write(eventsJson)
+
+	return events, err
 }
 
 func getCachedEvents(cache Cache) (events []Event, err error) {

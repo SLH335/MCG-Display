@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"net/url"
@@ -109,13 +110,6 @@ func (session *Session) buildCookies() string {
 
 // get new session token for requests that require authorization
 func (session *Session) getSessionToken() (token string, err error) {
-	token, err = session.Request(http.MethodGet, "WebUntis/api/token/new", nil, nil, false)
-
-	session.SessionToken = token
-	return token, err
-}
-
-func (session *Session) GetSessionToken() (token string, err error) {
 	token, err = session.Request(http.MethodGet, "WebUntis/api/token/new", nil, nil, false)
 
 	session.SessionToken = token
@@ -365,6 +359,75 @@ func (session *Session) GetCalendarEvents(start, end time.Time) (events []Calend
 				Calendar: string(entry.GetStringBytes("position3", "0", "current", "shortName")),
 				Color:    string(entry.GetStringBytes("color")),
 			})
+		}
+	}
+
+	return events, nil
+}
+
+func (session *Session) GetTimetableEvents(start, end time.Time) (events []TimetableEvent, err error) {
+	now, _ := time.Parse("20060102", time.Now().Format("20060102"))
+	startDiff := int(start.Sub(now).Hours() / 24)
+	endDiff := int(end.Sub(now).Hours()/24) + 1
+
+	for day := startDiff; day <= endDiff; day++ {
+		// skip day if date is not available
+		if day < 0 || day > 4 {
+			continue
+		}
+
+		path := "WebUntis/monitor/dayoverview/data?school=" + schoolName
+		reqBody := fmt.Sprintf(`{"schoolName": "%s", "format": "Monitor Klassen +%d"}`, schoolName, day)
+
+		res, err := http.Post(baseUrl+path, "application/json", bytes.NewReader([]byte(reqBody)))
+		if err != nil {
+			return events, err
+		}
+		defer res.Body.Close()
+
+		resBody, err := io.ReadAll(res.Body)
+		if err != nil {
+			return events, err
+		}
+
+		var parser fastjson.Parser
+		jsonData, err := parser.Parse(string(resBody))
+		if err != nil {
+			return events, err
+		}
+
+		date, _ := time.Parse("20060102", strconv.Itoa(jsonData.GetInt("payload", "date")))
+		if date.After(end.Add(24 * time.Hour)) {
+			break
+		}
+
+		for _, class := range jsonData.GetArray("payload", "rows") {
+			className := string(class.GetStringBytes("header"))
+			for i, cell := range class.GetArray("cells") {
+				if !cell.GetBool("isEvent") {
+					continue
+				}
+				title := string(cell.GetStringBytes("text"))
+				start := date.Add(time.Duration(6+i) * time.Hour)
+				end := start.Add(time.Duration(cell.GetInt("colSpan")) * time.Hour)
+
+				exists := false
+				for i, event := range events {
+					if event.Title == title && event.Start.Equal(start) && event.End.Equal(end) {
+						events[i].Classes = append(events[i].Classes, className)
+						exists = true
+					}
+				}
+
+				if !exists {
+					events = append(events, TimetableEvent{
+						Title:   title,
+						Classes: []string{className},
+						Start:   start,
+						End:     end,
+					})
+				}
+			}
 		}
 	}
 
