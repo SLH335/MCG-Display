@@ -86,7 +86,10 @@ templ eventBox(event Event) {
 				<div class="flex justify-between pb-0.5 text-lg">
 					<p>
 						if !event.FullDay {
-							{ event.Start.Format("15:04") + " - " + event.End.Format("15:04") }
+							{ event.Start.Format("15:04") }
+							if !event.Start.Equal(event.End) {
+								{ " - " + event.End.Format("15:04") }
+							}
 						}
 					</p>
 					<p>{ event.Location }</p>
