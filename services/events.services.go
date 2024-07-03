@@ -13,7 +13,7 @@ import (
 	. "github.com/mcg-dallgow/mcg-display/types"
 )
 
-func GetEvents(start, end time.Time) (events map[string][]Event, err error) {
+func GetEvents(start, end time.Time, teacher string) (events map[string][]Event, err error) {
 	eventList := []Event{}
 
 	username, password, err := GetCredentials()
@@ -30,18 +30,39 @@ func GetEvents(start, end time.Time) (events map[string][]Event, err error) {
 	if err != nil {
 		return events, err
 	}
-	calendarEvents, err := getCalendarEvents(session, start, end)
-	if err != nil {
-		return events, err
-	}
-	timetableEvents, err := getTimetableEvents(session, start, end)
-	if err != nil {
-		return events, err
-	}
 
-	eventList = append(eventList, exams...)
-	eventList = append(eventList, calendarEvents...)
-	eventList = append(eventList, timetableEvents...)
+	if teacher == "" {
+		calendarEvents, err := getCalendarEvents(session, start, end)
+		if err != nil {
+			return events, err
+		}
+		overviewEvents, err := getOverviewEvents(session, start, end)
+		if err != nil {
+			return events, err
+		}
+		eventList = append(eventList, exams...)
+		eventList = append(eventList, calendarEvents...)
+		eventList = append(eventList, overviewEvents...)
+	} else {
+		teacherEvents, err := getTeacherEvents(session, teacher, start, end)
+		if err != nil {
+			return events, err
+		}
+		for _, exam := range exams {
+			if Contains(exam.Title, teacher[:4], false) {
+				eventList = append(eventList, exam)
+			}
+		}
+		for _, teacherEvent := range teacherEvents {
+			if teacherEvent.Category.String() == "AG" {
+				if Contains(teacherEvent.Description, teacher[:4], false) {
+					eventList = append(eventList, teacherEvent)
+				}
+			} else {
+				eventList = append(eventList, teacherEvent)
+			}
+		}
+	}
 
 	sortEvents(eventList)
 
@@ -124,14 +145,14 @@ func getCalendarEvents(session webuntis.Session, start, end time.Time) (events [
 	return events, nil
 }
 
-func getTimetableEvents(session webuntis.Session, start, end time.Time) (events []Event, err error) {
+func getOverviewEvents(session webuntis.Session, start, end time.Time) (events []Event, err error) {
 	cache := Cache{"timetable", start, end}
 	events, err = getCachedEvents(cache)
 	if err == nil && len(events) > 0 {
 		return events, nil
 	}
 
-	timetableEvents, err := session.GetTimetableEvents(start, end)
+	timetableEvents, err := session.GetOverviewEvents(start, end)
 	if err != nil {
 		return events, err
 	}
@@ -153,6 +174,42 @@ func getTimetableEvents(session webuntis.Session, start, end time.Time) (events 
 	cache.Write(eventsJson)
 
 	return events, err
+}
+
+func getTeacherEvents(session webuntis.Session, teacher string, start, end time.Time) (events []Event, err error) {
+	timetableEvents, calendarEvents, err := session.GetTeacherEvents(teacher, start, end)
+	if err != nil {
+		return events, err
+	}
+
+	for _, timetableEvent := range timetableEvents {
+		fmt.Println(timetableEvent)
+		title := fmt.Sprintf("%s %s %s", timetableEvent.Title, strings.Join(timetableEvent.Classes, ", "), strings.Join(timetableEvent.Teachers, ", "))
+
+		events = append(events, Event{
+			Title:    title,
+			Category: StudentEvent,
+			Date:     timetableEvent.Start.Format("2006-01-02"),
+			FullDay:  false,
+			Start:    timetableEvent.Start,
+			End:      timetableEvent.End,
+		})
+	}
+
+	for _, calendarEvent := range calendarEvents {
+		events = append(events, Event{
+			Title:       calendarEvent.Name,
+			Description: calendarEvent.Notes,
+			Category:    getCalendarEventCategory(calendarEvent),
+			Date:        calendarEvent.Date,
+			FullDay:     calendarEvent.FullDay,
+			Start:       calendarEvent.Start,
+			End:         calendarEvent.End,
+			Location:    formatLocation(calendarEvent.Location),
+		})
+	}
+
+	return events, nil
 }
 
 func getCachedEvents(cache Cache) (events []Event, err error) {

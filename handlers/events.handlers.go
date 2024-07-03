@@ -13,6 +13,7 @@ func Events(c echo.Context) error {
 	start := c.QueryParam("start")
 	end := c.QueryParam("end")
 	days := c.QueryParam("days")
+	teacher := c.QueryParam("teacher")
 
 	startDate, endDate, err := services.ParseDateRange(start, end, days)
 	if err != nil {
@@ -21,7 +22,7 @@ func Events(c echo.Context) error {
 			Message: err.Error(),
 		})
 	}
-	events, err := services.GetEvents(startDate, endDate)
+	events, err := services.GetEvents(startDate, endDate, teacher)
 	if err != nil {
 		return c.JSON(http.StatusBadRequest, Response{
 			Success: false,

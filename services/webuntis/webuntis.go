@@ -316,6 +316,11 @@ func (session *Session) GetCalendarEvents(start, end time.Time) (events []Calend
 		return events, err
 	}
 
+	events = getCalendarEvents(jsonData)
+	return events, nil
+}
+
+func getCalendarEvents(jsonData *fastjson.Value) (events []CalendarEvent) {
 	// sadly events in "dayEntries" and "gridEntries" have different JSON formats
 	for _, dayData := range jsonData.GetArray("days") {
 		for _, entry := range dayData.GetArray("dayEntries") {
@@ -361,11 +366,10 @@ func (session *Session) GetCalendarEvents(start, end time.Time) (events []Calend
 			})
 		}
 	}
-
-	return events, nil
+	return events
 }
 
-func (session *Session) GetTimetableEvents(start, end time.Time) (events []TimetableEvent, err error) {
+func (session *Session) GetOverviewEvents(start, end time.Time) (events []TimetableEvent, err error) {
 	now, _ := time.Parse("20060102", time.Now().Format("20060102"))
 	startDiff := int(start.Sub(now).Hours() / 24)
 	endDiff := int(end.Sub(now).Hours()/24) + 1
@@ -432,4 +436,106 @@ func (session *Session) GetTimetableEvents(start, end time.Time) (events []Timet
 	}
 
 	return events, nil
+}
+
+func (session *Session) getTeachers() (teachers []UntisValue, err error) {
+	path := "WebUntis/api/rest/view/v1/timetable/filter"
+	queryParams := url.Values{
+		"resourceType":  {"TEACHER"},
+		"timetableType": {"STANDARD"},
+	}
+
+	res, err := session.Request(http.MethodGet, path, queryParams, nil, true)
+	if err != nil {
+		return teachers, err
+	}
+
+	var parser fastjson.Parser
+	jsonData, err := parser.Parse(res)
+	if err != nil {
+		return teachers, err
+	}
+
+	for _, teacher := range jsonData.GetArray("teachers") {
+		teachers = append(teachers, UntisValue{
+			Id:          teacher.GetInt("teacher", "id"),
+			ShortName:   string(teacher.GetStringBytes("teacher", "shortName")),
+			LongName:    string(teacher.GetStringBytes("teacher", "longName")),
+			DisplayName: string(teacher.GetStringBytes("teacher", "displayName")),
+		})
+	}
+
+	return teachers, nil
+}
+
+func (session *Session) GetTeacherEvents(teacher string, start, end time.Time) (timetableEvents []TimetableEvent, calendarEvents []CalendarEvent, err error) {
+	teacherExists := false
+	var teacherData UntisValue
+	teachers, err := session.getTeachers()
+	if err != nil {
+		return timetableEvents, calendarEvents, err
+	}
+	for _, currTeacher := range teachers {
+		if currTeacher.DisplayName == teacher {
+			teacherExists = true
+			teacherData = currTeacher
+		}
+	}
+	if !teacherExists {
+		return timetableEvents, calendarEvents, errors.New("error: that teacher does not exist")
+	}
+
+	path := "WebUntis/api/rest/view/v1/timetable/entries"
+	queryParams := url.Values{
+		"start":        {convertDateToUntis(start)},
+		"end":          {convertDateToUntis(end)},
+		"format":       {"4"},
+		"resourceType": {"TEACHER"},
+		"resources":    {strconv.Itoa(teacherData.Id)},
+		"periodTypes":  {"EVENT"},
+	}
+
+	res, err := session.Request(http.MethodGet, path, queryParams, nil, true)
+	if err != nil {
+		return timetableEvents, calendarEvents, err
+	}
+
+	var parser fastjson.Parser
+	jsonData, err := parser.Parse(res)
+	if err != nil {
+		return timetableEvents, calendarEvents, err
+	}
+
+	for _, dayData := range jsonData.GetArray("days") {
+		for _, entry := range dayData.GetArray("gridEntries") {
+			if string(entry.GetStringBytes("type")) != "EVENT" {
+				continue
+			}
+
+			entryStart, _ := time.Parse("2006-01-02T15:04", string(entry.GetStringBytes("duration", "start")))
+			entryEnd, _ := time.Parse("2006-01-02T15:04", string(entry.GetStringBytes("duration", "end")))
+
+			var entryClasses []string
+			for _, classData := range entry.GetArray("position1") {
+				entryClasses = append(entryClasses, string(classData.GetStringBytes("current", "longName")))
+			}
+
+			var entryTeachers []string
+			for _, teacherData := range entry.GetArray("position2") {
+				entryTeachers = append(entryTeachers, string(teacherData.GetStringBytes("current", "longName")))
+			}
+
+			timetableEvents = append(timetableEvents, TimetableEvent{
+				Title:    string(entry.GetStringBytes("lessonInfo")),
+				Start:    entryStart,
+				End:      entryEnd,
+				Classes:  entryClasses,
+				Teachers: entryTeachers,
+			})
+		}
+	}
+
+	calendarEvents = getCalendarEvents(jsonData)
+
+	return timetableEvents, calendarEvents, nil
 }
