@@ -22,5 +22,5 @@ func main() {
 	e.GET("/events", handlers.Events)
 
 	// Start server
-	e.Logger.Fatal(e.Start(":3000"))
+	e.Logger.Fatal(e.Start(":9000"))
 }
