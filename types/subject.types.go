@@ -82,7 +82,7 @@ func (subject Subject) Short() string {
 		"SN",
 		"SP",
 		"TE",
-		"AL",
+		"LE",
 		"",
 	}[subject]
 }

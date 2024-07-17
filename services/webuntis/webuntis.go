@@ -9,6 +9,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -316,11 +317,11 @@ func (session *Session) GetCalendarEvents(start, end time.Time) (events []Calend
 		return events, err
 	}
 
-	events = getCalendarEvents(jsonData)
+	events = parseCalendarEvents(jsonData)
 	return events, nil
 }
 
-func getCalendarEvents(jsonData *fastjson.Value) (events []CalendarEvent) {
+func parseCalendarEvents(jsonData *fastjson.Value) (events []CalendarEvent) {
 	// sadly events in "dayEntries" and "gridEntries" have different JSON formats
 	for _, dayData := range jsonData.GetArray("days") {
 		for _, entry := range dayData.GetArray("dayEntries") {
@@ -438,6 +439,106 @@ func (session *Session) GetOverviewEvents(start, end time.Time) (events []Timeta
 	return events, nil
 }
 
+func (session *Session) GetTimetableEvents(start, end time.Time) (events []TimetableEvent, err error) {
+	path := fmt.Sprintf("WebUntis/Timetable.do?request.preventCache=%d", time.Now().UnixMilli())
+	data := url.Values{}
+	data.Set("ajaxCommand", "getDayOverviewTimetable")
+	data.Set("elementType", "1")
+	data.Set("date", start.Format("20060102"))
+	data.Set("formatId", "4")
+
+	req, err := http.NewRequest(http.MethodPost, baseUrl+path, strings.NewReader(data.Encode()))
+	if err != nil {
+		return events, err
+	}
+
+	req.Header.Add("Cookie", session.buildCookies())
+	if !session.isSessionTokenValid() {
+		session.getSessionToken()
+	}
+	req.Header.Add("Authorization", "Bearer "+session.SessionToken)
+	req.Header.Add("Content-Type", "application/x-www-form-urlencoded")
+
+	client := &http.Client{Timeout: 10 * time.Second}
+	res, err := client.Do(req)
+	if err != nil {
+		return events, err
+	}
+	defer res.Body.Close()
+
+	resBody, err := io.ReadAll(res.Body)
+	if err != nil {
+		return events, err
+	}
+
+	var parser fastjson.Parser
+	jsonData, err := parser.Parse(string(resBody))
+	if err != nil {
+		return events, err
+	}
+
+	for _, class := range jsonData.GetArray("result", "data", "elementIds") {
+		for _, lesson := range jsonData.GetArray("result", "data", "elementPeriods", class.String()) {
+			isEvent := lesson.GetBool("is", "event")
+			if !isEvent {
+				continue
+			}
+			title := string(lesson.GetStringBytes("lessonText"))
+			classes := []string{}
+			for _, element := range lesson.GetArray("elements") {
+				if element.GetInt("type") == 1 {
+					for _, eData := range jsonData.GetArray("result", "data", "elements") {
+						if eData.GetInt("type") == 1 && eData.GetInt("id") == element.GetInt("id") {
+							classes = append(classes, string(eData.GetStringBytes("name")))
+						}
+					}
+				}
+			}
+			teachers := []string{}
+			for _, element := range lesson.GetArray("elements") {
+				if element.GetInt("type") == 2 {
+					for _, eData := range jsonData.GetArray("result", "data", "elements") {
+						if eData.GetInt("type") == 2 && eData.GetInt("id") == element.GetInt("id") {
+							teachers = append(teachers, string(eData.GetStringBytes("name")))
+						}
+					}
+				}
+			}
+			date, _ := time.Parse("20060102", strconv.Itoa(lesson.GetInt("date")))
+			startInt := lesson.GetInt("startTime")
+			endInt := lesson.GetInt("endTime")
+			start := date.Add(time.Duration(startInt/100)*time.Hour + time.Duration(startInt%100)*time.Minute)
+			end := date.Add(time.Duration(endInt/100)*time.Hour + time.Duration(endInt%100)*time.Minute)
+
+			exists := false
+			for i, event := range events {
+				if event.Title == title && event.Start.Equal(start) && event.End.Equal(end) {
+					events[i].Classes = append(events[i].Classes, classes...)
+					slices.Sort(events[i].Classes)
+					events[i].Classes = slices.Compact(events[i].Classes)
+
+					events[i].Teachers = append(events[i].Teachers, teachers...)
+					slices.Sort(events[i].Teachers)
+					events[i].Teachers = slices.Compact(events[i].Teachers)
+
+					exists = true
+				}
+			}
+			if !exists {
+				events = append(events, TimetableEvent{
+					Title:    title,
+					Start:    start,
+					End:      end,
+					Classes:  classes,
+					Teachers: teachers,
+				})
+			}
+		}
+	}
+
+	return events, nil
+}
+
 func (session *Session) getTeachers() (teachers []UntisValue, err error) {
 	path := "WebUntis/api/rest/view/v1/timetable/filter"
 	queryParams := url.Values{
@@ -535,7 +636,7 @@ func (session *Session) GetTeacherEvents(teacher string, start, end time.Time) (
 		}
 	}
 
-	calendarEvents = getCalendarEvents(jsonData)
+	calendarEvents = parseCalendarEvents(jsonData)
 
 	return timetableEvents, calendarEvents, nil
 }

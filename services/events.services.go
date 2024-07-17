@@ -36,13 +36,13 @@ func GetEvents(start, end time.Time, teacher string) (events map[string][]Event,
 		if err != nil {
 			return events, err
 		}
-		overviewEvents, err := getOverviewEvents(session, start, end)
+		timetableEvents, err := getTimetableEvents(session, start, end)
 		if err != nil {
 			return events, err
 		}
 		eventList = append(eventList, exams...)
 		eventList = append(eventList, calendarEvents...)
-		eventList = append(eventList, overviewEvents...)
+		eventList = append(eventList, timetableEvents...)
 	} else {
 		teacherEvents, err := getTeacherEvents(session, teacher, start, end)
 		if err != nil {
@@ -145,20 +145,20 @@ func getCalendarEvents(session webuntis.Session, start, end time.Time) (events [
 	return events, nil
 }
 
-func getOverviewEvents(session webuntis.Session, start, end time.Time) (events []Event, err error) {
+func getTimetableEvents(session webuntis.Session, start, end time.Time) (events []Event, err error) {
 	cache := Cache{"timetable", start, end}
 	events, err = getCachedEvents(cache)
 	if err == nil && len(events) > 0 {
 		return events, nil
 	}
 
-	timetableEvents, err := session.GetOverviewEvents(start, end)
+	timetableEvents, err := session.GetTimetableEvents(start, end)
 	if err != nil {
 		return events, err
 	}
 
 	for _, timetableEvent := range timetableEvents {
-		title := fmt.Sprintf("%s %s", timetableEvent.Title, strings.Join(timetableEvent.Classes, ", "))
+		title := fmt.Sprintf("%s %s", timetableEvent.Title, getClassesOrGradeLevels(timetableEvent.Classes))
 
 		events = append(events, Event{
 			Title:    title,
@@ -177,13 +177,18 @@ func getOverviewEvents(session webuntis.Session, start, end time.Time) (events [
 }
 
 func getTeacherEvents(session webuntis.Session, teacher string, start, end time.Time) (events []Event, err error) {
+	cache := Cache{"teacher" + teacher, start, end}
+	events, err = getCachedEvents(cache)
+	if err == nil && len(events) > 0 {
+		return events, nil
+	}
+
 	timetableEvents, calendarEvents, err := session.GetTeacherEvents(teacher, start, end)
 	if err != nil {
 		return events, err
 	}
 
 	for _, timetableEvent := range timetableEvents {
-		fmt.Println(timetableEvent)
 		title := fmt.Sprintf("%s %s %s", timetableEvent.Title, strings.Join(timetableEvent.Classes, ", "), strings.Join(timetableEvent.Teachers, ", "))
 
 		events = append(events, Event{
@@ -208,6 +213,9 @@ func getTeacherEvents(session webuntis.Session, teacher string, start, end time.
 			Location:    formatLocation(calendarEvent.Location),
 		})
 	}
+
+	eventsJson, err := json.Marshal(events)
+	cache.Write(eventsJson)
 
 	return events, nil
 }
@@ -265,26 +273,11 @@ func generateExamTitle(exam webuntis.Exam) string {
 	}
 
 	// exam class or grade level
-	examClass := ""
-	examClasses := []string{}
+	var examClasses []string
 	for _, class := range exam.Classes {
-		examClasses = append(examClasses, strings.Replace(class.ShortName, "Jhg", "Jg", 1))
+		examClasses = append(examClasses, class.DisplayName)
 	}
-	slices.Sort(examClasses)
-	examClasses = slices.Compact(examClasses)
-	if len(examClasses) > 2 {
-		gradeLevels := []string{}
-		re := regexp.MustCompile("[0-9]+")
-		for _, class := range examClasses {
-			gradeLevels = append(gradeLevels, re.FindString(class))
-		}
-		if len(slices.Compact(gradeLevels)) == 1 {
-			examClass = "Jg" + gradeLevels[0]
-		}
-	}
-	if examClass == "" {
-		examClass = strings.Join(examClasses, ", ")
-	}
+	examClass := getClassesOrGradeLevels(examClasses)
 
 	// exam subject
 	examSubject := getExamSubject(exam).String()
@@ -386,6 +379,36 @@ func getExamSubject(exam webuntis.Exam) Subject {
 		}
 	}
 	return EmptySubject
+}
+
+func getClassesOrGradeLevels(classes []string) string {
+	class := ""
+	for i, class := range classes {
+		classes[i] = strings.Replace(class, "Jhg", "Jg", 1)
+	}
+	slices.Sort(classes)
+	classes = slices.Compact(classes)
+	if len(classes) > 2 {
+		gradeLevels := []string{}
+		for _, class := range classes {
+			gradeLevels = append(gradeLevels, getClassGradeLevel(class))
+		}
+		gradeLevels = slices.Compact(gradeLevels)
+		if len(gradeLevels) == 1 {
+			class = "Jg" + gradeLevels[0]
+		} else {
+			class = "Jg " + strings.Join(gradeLevels, ", ")
+		}
+	}
+	if class == "" {
+		class = strings.Join(classes, ", ")
+	}
+	return class
+}
+
+func getClassGradeLevel(class string) (gradeLevel string) {
+	re := regexp.MustCompile("[0-9]+")
+	return re.FindString(class)
 }
 
 func getCalendarEventCategory(event webuntis.CalendarEvent) EventCategory {
