@@ -80,3 +80,10 @@ type TimetableEvent struct {
 	Classes  []string
 	Teachers []string
 }
+
+type PersonType string
+
+const (
+	TypeStudent PersonType = "student"
+	TypeTeacher PersonType = "teacher"
+)

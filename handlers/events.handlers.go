@@ -6,6 +6,7 @@ import (
 	"github.com/labstack/echo/v4"
 	"github.com/mcg-dallgow/mcg-display/components"
 	"github.com/mcg-dallgow/mcg-display/services"
+	"github.com/mcg-dallgow/mcg-display/services/webuntis"
 	. "github.com/mcg-dallgow/mcg-display/types"
 )
 
@@ -14,6 +15,7 @@ func Events(c echo.Context) error {
 	end := c.QueryParam("end")
 	days := c.QueryParam("days")
 	teacher := c.QueryParam("teacher")
+	student := c.QueryParam("student")
 
 	startDate, endDate, err := services.ParseDateRange(start, end, days)
 	if err != nil {
@@ -22,7 +24,17 @@ func Events(c echo.Context) error {
 			Message: err.Error(),
 		})
 	}
-	events, err := services.GetEvents(startDate, endDate, teacher)
+	var person string
+	var personType webuntis.PersonType
+	if teacher != "" {
+		person = teacher
+		personType = webuntis.TypeTeacher
+	} else {
+		person = student
+		personType = webuntis.TypeStudent
+	}
+
+	events, err := services.GetEvents(startDate, endDate, person, personType)
 	if err != nil {
 		return c.JSON(http.StatusBadRequest, Response{
 			Success: false,

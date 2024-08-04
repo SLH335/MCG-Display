@@ -370,75 +370,6 @@ func parseCalendarEvents(jsonData *fastjson.Value) (events []CalendarEvent) {
 	return events
 }
 
-func (session *Session) GetOverviewEvents(start, end time.Time) (events []TimetableEvent, err error) {
-	now, _ := time.Parse("20060102", time.Now().Format("20060102"))
-	startDiff := int(start.Sub(now).Hours() / 24)
-	endDiff := int(end.Sub(now).Hours()/24) + 1
-
-	for day := startDiff; day <= endDiff; day++ {
-		// skip day if date is not available
-		if day < 0 || day > 4 {
-			continue
-		}
-
-		path := "WebUntis/monitor/dayoverview/data?school=" + schoolName
-		reqBody := fmt.Sprintf(`{"schoolName": "%s", "format": "Monitor Klassen +%d"}`, schoolName, day)
-
-		res, err := http.Post(baseUrl+path, "application/json", bytes.NewReader([]byte(reqBody)))
-		if err != nil {
-			return events, err
-		}
-		defer res.Body.Close()
-
-		resBody, err := io.ReadAll(res.Body)
-		if err != nil {
-			return events, err
-		}
-
-		var parser fastjson.Parser
-		jsonData, err := parser.Parse(string(resBody))
-		if err != nil {
-			return events, err
-		}
-
-		date, _ := time.Parse("20060102", strconv.Itoa(jsonData.GetInt("payload", "date")))
-		if date.After(end.Add(24 * time.Hour)) {
-			break
-		}
-
-		for _, class := range jsonData.GetArray("payload", "rows") {
-			className := string(class.GetStringBytes("header"))
-			for i, cell := range class.GetArray("cells") {
-				if !cell.GetBool("isEvent") {
-					continue
-				}
-				title := string(cell.GetStringBytes("text"))
-				start := date.Add(time.Duration(6+i) * time.Hour)
-				end := start.Add(time.Duration(cell.GetInt("colSpan")) * time.Hour)
-
-				exists := false
-				for i, event := range events {
-					if event.Title == title && event.Start.Equal(start) && event.End.Equal(end) {
-						events[i].Classes = append(events[i].Classes, className)
-						exists = true
-					}
-				}
-
-				if !exists {
-					events = append(events, TimetableEvent{
-						Title:   title,
-						Classes: []string{className},
-						Start:   start,
-						End:     end,
-					})
-				}
-			}
-		}
-	}
-
-	return events, nil
-}
-
 func (session *Session) GetTimetableEvents(start, end time.Time) (events []TimetableEvent, err error) {
 	path := fmt.Sprintf("WebUntis/Timetable.do?request.preventCache=%d", time.Now().UnixMilli())
 	data := url.Values{}
@@ -539,51 +470,53 @@ func (session *Session) GetTimetableEvents(start, end time.Time) (events []Timet
 	return events, nil
 }
 
-func (session *Session) getTeachers() (teachers []UntisValue, err error) {
+func (session *Session) getPersons(personType PersonType) (persons []UntisValue, err error) {
+	pTypeStr := string(personType)
+
 	path := "WebUntis/api/rest/view/v1/timetable/filter"
 	queryParams := url.Values{
-		"resourceType":  {"TEACHER"},
+		"resourceType":  {strings.ToUpper(pTypeStr)},
 		"timetableType": {"STANDARD"},
 	}
 
 	res, err := session.Request(http.MethodGet, path, queryParams, nil, true)
 	if err != nil {
-		return teachers, err
+		return persons, err
 	}
 
 	var parser fastjson.Parser
 	jsonData, err := parser.Parse(res)
 	if err != nil {
-		return teachers, err
+		return persons, err
 	}
 
-	for _, teacher := range jsonData.GetArray("teachers") {
-		teachers = append(teachers, UntisValue{
-			Id:          teacher.GetInt("teacher", "id"),
-			ShortName:   string(teacher.GetStringBytes("teacher", "shortName")),
-			LongName:    string(teacher.GetStringBytes("teacher", "longName")),
-			DisplayName: string(teacher.GetStringBytes("teacher", "displayName")),
+	for _, person := range jsonData.GetArray(pTypeStr + "s") {
+		persons = append(persons, UntisValue{
+			Id:          person.GetInt(pTypeStr, "id"),
+			ShortName:   string(person.GetStringBytes(pTypeStr, "shortName")),
+			LongName:    string(person.GetStringBytes(pTypeStr, "longName")),
+			DisplayName: string(person.GetStringBytes(pTypeStr, "displayName")),
 		})
 	}
 
-	return teachers, nil
+	return persons, nil
 }
 
-func (session *Session) GetTeacherEvents(teacher string, start, end time.Time) (timetableEvents []TimetableEvent, calendarEvents []CalendarEvent, err error) {
-	teacherExists := false
-	var teacherData UntisValue
-	teachers, err := session.getTeachers()
+func (session *Session) GetIndividualEvents(person string, personType PersonType, start, end time.Time) (timetableEvents []TimetableEvent, calendarEvents []CalendarEvent, exams []Exam, err error) {
+	personExists := false
+	var personData UntisValue
+	persons, err := session.getPersons(personType)
 	if err != nil {
-		return timetableEvents, calendarEvents, err
+		return timetableEvents, calendarEvents, exams, err
 	}
-	for _, currTeacher := range teachers {
-		if currTeacher.DisplayName == teacher {
-			teacherExists = true
-			teacherData = currTeacher
+	for _, currPerson := range persons {
+		if currPerson.DisplayName == person {
+			personExists = true
+			personData = currPerson
 		}
 	}
-	if !teacherExists {
-		return timetableEvents, calendarEvents, errors.New("error: that teacher does not exist")
+	if !personExists {
+		return timetableEvents, calendarEvents, exams, errors.New("error: that " + string(personType) + " does not exist")
 	}
 
 	path := "WebUntis/api/rest/view/v1/timetable/entries"
@@ -591,52 +524,92 @@ func (session *Session) GetTeacherEvents(teacher string, start, end time.Time) (
 		"start":        {convertDateToUntis(start)},
 		"end":          {convertDateToUntis(end)},
 		"format":       {"4"},
-		"resourceType": {"TEACHER"},
-		"resources":    {strconv.Itoa(teacherData.Id)},
-		"periodTypes":  {"EVENT"},
+		"resourceType": {strings.ToUpper(string(personType))},
+		"resources":    {strconv.Itoa(personData.Id)},
+		"periodTypes":  {"EVENT", "EXAM"},
 	}
 
 	res, err := session.Request(http.MethodGet, path, queryParams, nil, true)
 	if err != nil {
-		return timetableEvents, calendarEvents, err
+		return timetableEvents, calendarEvents, exams, err
 	}
 
 	var parser fastjson.Parser
 	jsonData, err := parser.Parse(res)
 	if err != nil {
-		return timetableEvents, calendarEvents, err
+		return timetableEvents, calendarEvents, exams, err
 	}
 
 	for _, dayData := range jsonData.GetArray("days") {
 		for _, entry := range dayData.GetArray("gridEntries") {
-			if string(entry.GetStringBytes("type")) != "EVENT" {
-				continue
-			}
-
 			entryStart, _ := time.Parse("2006-01-02T15:04", string(entry.GetStringBytes("duration", "start")))
 			entryEnd, _ := time.Parse("2006-01-02T15:04", string(entry.GetStringBytes("duration", "end")))
 
-			var entryClasses []string
-			for _, classData := range entry.GetArray("position1") {
-				entryClasses = append(entryClasses, string(classData.GetStringBytes("current", "longName")))
-			}
+			if string(entry.GetStringBytes("type")) == "EVENT" {
+				var entryClasses []string
+				for _, classData := range entry.GetArray("position1") {
+					entryClasses = append(entryClasses, string(classData.GetStringBytes("current", "longName")))
+				}
 
-			var entryTeachers []string
-			for _, teacherData := range entry.GetArray("position2") {
-				entryTeachers = append(entryTeachers, string(teacherData.GetStringBytes("current", "longName")))
-			}
+				var entryTeachers []string
+				for _, teacherData := range entry.GetArray("position2") {
+					entryTeachers = append(entryTeachers, string(teacherData.GetStringBytes("current", "longName")))
+				}
 
-			timetableEvents = append(timetableEvents, TimetableEvent{
-				Title:    string(entry.GetStringBytes("lessonInfo")),
-				Start:    entryStart,
-				End:      entryEnd,
-				Classes:  entryClasses,
-				Teachers: entryTeachers,
+				timetableEvents = append(timetableEvents, TimetableEvent{
+					Title:    string(entry.GetStringBytes("lessonInfo")),
+					Start:    entryStart,
+					End:      entryEnd,
+					Classes:  entryClasses,
+					Teachers: entryTeachers,
+				})
+			} else if string(entry.GetStringBytes("type")) == "EXAM" {
+				exams = append(exams, Exam{
+					Name:  string(entry.GetStringBytes("lessonInfo")),
+					Start: Time{entryStart},
+					End:   Time{entryEnd},
+					Rooms: []UntisValue{
+						{ShortName: string(entry.GetStringBytes("position4", "0", "current", "shortName"))},
+					},
+				})
+			}
+		}
+	}
+
+	slices.SortFunc(exams, func(a, b Exam) int {
+		if a.Name < b.Name {
+			return -1
+		} else if a.Name > b.Name {
+			return 1
+		}
+		if a.Start.Before(b.Start.Time) {
+			return -1
+		} else if a.Start.After(b.Start.Time) {
+			return 1
+		}
+		return 0
+	})
+
+	// combine exams ranging accross multiple lessons
+	combinedExams := []Exam{}
+	combined := false
+	for i, exam := range exams[:len(exams)-1] {
+		if exam.Name == exams[i+1].Name {
+			combinedExams = append(combinedExams, Exam{
+				Name:  exam.Name,
+				Rooms: exam.Rooms,
+				Start: exam.Start,
+				End:   exams[i+1].End,
 			})
+			combined = true
+		} else if !combined {
+			combinedExams = append(combinedExams, exam)
+		} else {
+			combined = false
 		}
 	}
 
 	calendarEvents = parseCalendarEvents(jsonData)
 
-	return timetableEvents, calendarEvents, nil
+	return timetableEvents, calendarEvents, combinedExams, nil
 }

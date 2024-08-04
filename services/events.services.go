@@ -13,7 +13,7 @@ import (
 	. "github.com/mcg-dallgow/mcg-display/types"
 )
 
-func GetEvents(start, end time.Time, teacher string) (events map[string][]Event, err error) {
+func GetEvents(start, end time.Time, person string, personType webuntis.PersonType) (events map[string][]Event, err error) {
 	eventList := []Event{}
 
 	username, password, err := GetCredentials()
@@ -31,7 +31,7 @@ func GetEvents(start, end time.Time, teacher string) (events map[string][]Event,
 		return events, err
 	}
 
-	if teacher == "" {
+	if person == "" {
 		calendarEvents, err := getCalendarEvents(session, start, end)
 		if err != nil {
 			return events, err
@@ -44,22 +44,26 @@ func GetEvents(start, end time.Time, teacher string) (events map[string][]Event,
 		eventList = append(eventList, calendarEvents...)
 		eventList = append(eventList, timetableEvents...)
 	} else {
-		teacherEvents, err := getTeacherEvents(session, teacher, start, end)
+		individualEvents, err := getIndividualEvents(session, person, personType, start, end)
 		if err != nil {
 			return events, err
 		}
 		for _, exam := range exams {
-			if Contains(exam.Title, teacher[:4], false) {
+			if Contains(exam.Title, person[:4], false) {
 				eventList = append(eventList, exam)
 			}
 		}
-		for _, teacherEvent := range teacherEvents {
-			if teacherEvent.Category.String() == "AG" {
-				if Contains(teacherEvent.Description, teacher[:4], false) {
-					eventList = append(eventList, teacherEvent)
+		for _, individualEvent := range individualEvents {
+			if individualEvent.Category.String() == "AG" && personType == webuntis.TypeTeacher {
+				if Contains(individualEvent.Description, person[:4], false) {
+					eventList = append(eventList, individualEvent)
+				}
+			} else if individualEvent.Category.String() == "Prüfung" {
+				if personType == webuntis.TypeStudent {
+					eventList = append(eventList, individualEvent)
 				}
 			} else {
-				eventList = append(eventList, teacherEvent)
+				eventList = append(eventList, individualEvent)
 			}
 		}
 	}
@@ -176,14 +180,14 @@ func getTimetableEvents(session webuntis.Session, start, end time.Time) (events 
 	return events, err
 }
 
-func getTeacherEvents(session webuntis.Session, teacher string, start, end time.Time) (events []Event, err error) {
-	cache := Cache{"teacher" + teacher, start, end}
+func getIndividualEvents(session webuntis.Session, person string, personType webuntis.PersonType, start, end time.Time) (events []Event, err error) {
+	cache := Cache{string(personType) + person, start, end}
 	events, err = getCachedEvents(cache)
 	if err == nil && len(events) > 0 {
 		return events, nil
 	}
 
-	timetableEvents, calendarEvents, err := session.GetTeacherEvents(teacher, start, end)
+	timetableEvents, calendarEvents, exams, err := session.GetIndividualEvents(person, personType, start, end)
 	if err != nil {
 		return events, err
 	}
@@ -211,6 +215,19 @@ func getTeacherEvents(session webuntis.Session, teacher string, start, end time.
 			Start:       calendarEvent.Start,
 			End:         calendarEvent.End,
 			Location:    formatLocation(calendarEvent.Location),
+		})
+	}
+
+	for _, exam := range exams {
+		events = append(events, Event{
+			Title:       generateExamTitle(exam),
+			Description: generateExamDescription(exam),
+			Category:    ExamEvent,
+			Date:        exam.Start.Time.Format("2006-01-02"),
+			FullDay:     false,
+			Start:       exam.Start.Time,
+			End:         exam.End.Time,
+			Location:    exam.Rooms[0].ShortName,
 		})
 	}
 
@@ -271,6 +288,13 @@ func generateExamTitle(exam webuntis.Exam) string {
 	default:
 		examType = exam.Type.ShortName
 	}
+	if examType == "" {
+		for _, currentType := range []string{"Klausur", "Test", "LEK"} {
+			if AnyContain([]string{exam.Name, exam.Text}, currentType, true) {
+				examType = currentType
+			}
+		}
+	}
 
 	// exam class or grade level
 	var examClasses []string
@@ -284,16 +308,14 @@ func generateExamTitle(exam webuntis.Exam) string {
 
 	// exam course type
 	examCourseType := ""
-	if examClass == "Jg11" || examClass == "Jg12" {
-		for _, courseType := range []string{"GK", "LK"} {
-			subject := ""
-			if len(exam.Subject.ShortName) >= 2 {
-				subject = exam.Subject.ShortName[:2]
-			}
-			if AnyContain([]string{exam.Name, exam.Text, subject}, courseType, false) {
-				examCourseType = courseType
-				break
-			}
+	for _, courseType := range []string{"GK", "LK"} {
+		subject := ""
+		if len(exam.Subject.ShortName) >= 2 {
+			subject = exam.Subject.ShortName[:2]
+		}
+		if AnyContain([]string{exam.Name, exam.Text, subject}, courseType, false) {
+			examCourseType = courseType
+			break
 		}
 	}
 
