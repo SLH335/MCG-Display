@@ -1,5 +1,6 @@
 # Output dir
 tmp/
+mcg-display
 
 # Tailwind CSS
 node_modules/
