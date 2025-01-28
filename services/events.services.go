@@ -377,7 +377,7 @@ func isUseful(text string, usedWords []string) bool {
 	for _, word := range usedWords {
 		usefulText = strings.ReplaceAll(usefulText, word, "")
 	}
-	if float32(len(strings.Trim(usefulText, " .,-/&0123456789")))/float32(len(text)) < 0.4 {
+	if float32(len(strings.Trim(usefulText, " .,:;-/&0123456789")))/float32(len(text)) < 0.4 {
 		return false
 	}
 	return true
