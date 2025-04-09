@@ -9,6 +9,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"os"
 	"slices"
 	"strconv"
 	"strings"
@@ -25,8 +26,8 @@ const schoolNameBase64 string = "_bWFyaWUtY3VyaWUtZ3lt"
 const appId string = "MCG-Display"
 
 // timetable resources to access calendar; must be accessible by the user issuing the request
-const calendarResourceType string = "STUDENT"
-const calendarResource int = 5186
+const calendarResourceType string = "TEACHER"
+const calendarResource int = 644
 
 type Session struct {
 	ClassId      int
@@ -303,7 +304,7 @@ func (session *Session) GetCalendarEvents(start, end time.Time) (events []Calend
 		"format":       {"4"},
 		"resourceType": {calendarResourceType},
 		"resources":    {strconv.Itoa(calendarResource)},
-		"periodTypes":  {"OFFICE_HOUR"}, // often unused period type to query less unneeded information
+		"periodTypes":  {""},
 	}
 
 	res, err := session.Request(http.MethodGet, path, queryParams, nil, true)
@@ -401,6 +402,8 @@ func (session *Session) GetTimetableEvents(start, end time.Time) (events []Timet
 	if err != nil {
 		return events, err
 	}
+	os.WriteFile("out.txt", resBody, 644)
+	//fmt.Println(string(resBody)[200:])
 
 	var parser fastjson.Parser
 	jsonData, err := parser.Parse(string(resBody))
